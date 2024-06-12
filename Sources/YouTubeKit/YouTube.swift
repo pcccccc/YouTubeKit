@@ -301,7 +301,7 @@ public class YouTube {
         }
     }
     
-    var videoInfos: [InnerTube.VideoInfo] {
+    public var videoInfos: [InnerTube.VideoInfo] {
         get async throws {
             if let cached = _videoInfos {
                 return cached
