@@ -8,7 +8,7 @@
 import Foundation
 
 @available(iOS 13.0, watchOS 6.0, tvOS 13.0, macOS 10.15, *)
-class InnerTube {
+public class InnerTube {
     
     private struct Client {
         let name: String
@@ -143,29 +143,29 @@ class InnerTube {
         return try JSONDecoder().decode(T.self, from: responseData)
     }
     
-    struct VideoInfo: Decodable {
+    public struct VideoInfo: Decodable {
         let playabilityStatus: PlayabilityStatus?
         let streamingData: StreamingData?
         let videoDetails: VideoDetails?
 
-        struct PlayabilityStatus: Decodable {
+        public struct PlayabilityStatus: Decodable {
             let status: String?
             let reason: String?
         }
 
-        struct VideoDetails: Decodable {
-            let videoId: String
-            let title: String
-            let shortDescription: String
-            let thumbnail: Thumbnail
+        public struct VideoDetails: Decodable {
+            public let videoId: String
+            public let title: String
+            public let shortDescription: String
+            public let thumbnail: Thumbnail
 
-            struct Thumbnail: Decodable {
-                let thumbnails: [ThumbnailMetadata]
+            public struct Thumbnail: Decodable {
+                public let thumbnails: [ThumbnailMetadata]
 
-                struct ThumbnailMetadata: Decodable {
-                    let url: URL
-                    let width: Int
-                    let height: Int
+                public struct ThumbnailMetadata: Decodable {
+                    public let url: URL
+                    public let width: Int
+                    public let height: Int
                 }
             }
         }

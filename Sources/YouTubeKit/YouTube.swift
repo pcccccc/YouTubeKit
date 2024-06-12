@@ -291,7 +291,7 @@ public class YouTube {
     }
 
     /// Video details from video info.
-    var videoDetails: InnerTube.VideoInfo.VideoDetails {
+    public var videoDetails: InnerTube.VideoInfo.VideoDetails {
         get async throws {
             if let videoDetails = try await videoInfos.lazy.compactMap({ $0.videoDetails }).first {
                 return videoDetails
