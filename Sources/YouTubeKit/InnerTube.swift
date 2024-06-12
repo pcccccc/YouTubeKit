@@ -171,14 +171,14 @@ public class InnerTube {
         }
     }
     
-    struct StreamingData: Decodable {
-        let expiresInSeconds: String?
-        let formats: [Format]?
-        let adaptiveFormats: [Format]? // actually slightly different Format object (TODO)
-        let onesieStreamingUrl: String?
-        let hlsManifestUrl: String?
+    public struct StreamingData: Decodable {
+        public let expiresInSeconds: String?
+        public let formats: [Format]?
+        public let adaptiveFormats: [Format]? // actually slightly different Format object (TODO)
+        public let onesieStreamingUrl: String?
+        public let hlsManifestUrl: String?
         
-        struct Format: Decodable {
+        public struct Format: Decodable {
             let itag: Int
             var url: String?
             let mimeType: String
