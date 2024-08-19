@@ -6,6 +6,9 @@
 //
 
 import Foundation
+#if canImport(JavaScriptCore)
+import JavaScriptCore
+#endif
 import os.log
 
 @available(iOS 13.0, watchOS 6.0, tvOS 13.0, macOS 10.15, *)
@@ -21,10 +24,9 @@ class Cipher {
         NSRegularExpression(#"\w+\[(\"\w+\")\]\(\w,(\d+)\)"#)
     ]
     
-    private let throttlingPlan: [(String, String, String?)]
-    private let throttlingArray: [ThrottlingJSExpression]
+    private let nParameterFunction: String
     
-    private var calculatedN: String?
+    private var calculatedN = [String: String]()
     
     private static let log = OSLog(Cipher.self)
     
@@ -43,45 +45,38 @@ class Cipher {
         self.transformMap = try Cipher.getTransformMap(js: js, variable: variable)
         self.transformPlan = try Cipher.getDecodedTransformPlan(rawPlan: rawTransformPlan, variable: variable, transformMap: transformMap)
         
-        self.throttlingPlan = try Cipher.getThrottlingPlan(js: js)
-        self.throttlingArray = try Cipher.getThrottlingFunctionArray(js: js)
+        self.nParameterFunction = try Cipher.getNParameterFunction(js: js)
     }
     
-    // TODO: set correct result type
     /// Converts n to the correct value to prevent throttling.
-    func calculateN(initialN: [Character]) throws -> String {
-        if let calculatedN = calculatedN {
-            return calculatedN
+    func calculateN(initialN: String) throws -> String {
+        if let newN = calculatedN[initialN] {
+            return newN
         }
         
-        return "" // TODO: implement
-        
-        /*for i in 0..<throttlingArray.count {
-            if case .stringValue("b") = throttlingArray[i] {
-                throttlingArray[i] = initialN
-            }
+#if canImport(JavaScriptCore)
+        guard let context = JSContext() else {
+            os_log("failed to create JSContext", log: Cipher.log, type: .error)
+            return ""
         }
         
-        for step in throttlingPlan {
-            let currentFunction = throttlingArray[Int(step.0) ?? 0]
-            
-            guard currentFunction.isCallable else {
-                os_log("Function at %i is not callable. Throttling array: %@", step.0, throttlingArray)
-                throw YouTubeKitError.extractError
-            }
-            
-            let firstArgument = throttlingArray[Int(step.1) ?? 0]
-            
-            if let thirdStep = step.2 {
-                let secondArgument = throttlingArray[Int(thirdStep) ?? 0]
-                currentFunction.execute(on: firstArgument, and: secondArgument)
-            } else {
-                currentFunction.execute(on: firstArgument)
-            }
+        context.evaluateScript(nParameterFunction)
+        
+        let function = context.objectForKeyedSubscript("processNSignature")
+        let result = function?.call(withArguments: [initialN])
+        
+        guard let result, result.isString, let newN = result.toString() else {
+            os_log("failed to calculate n", log: Cipher.log, type: .error)
+            return ""
         }
         
-        calculatedN = initialN.lazy.joined()
-        return calculatedN!*/
+        // cache the result
+        calculatedN[initialN] = newN
+        
+        return newN
+#else
+        return ""
+#endif
     }
     
     /// Decipher the signature
@@ -106,14 +101,6 @@ class Cipher {
         
         return String(signature)
     }
-    
-    /// Parse the Javascript transform function.
-    /// Break a JavaScript transform function down into a two element tuple containing the function name and some integer-based argument.
-    /*func parseFunction(jsFunction: String) -> (String, Int) {
-        for pattern in jsFuncPatterns {
-            if let parseMatch = pattern.firstMatch(in: jsFunction, group: <#T##Int?#>)
-        }
-    }*/
     
     
     // MARK: - Static Functions
@@ -255,124 +242,6 @@ class Cipher {
         return String(js[match.start...])
     }
     
-    enum ThrottlingJSExpression {
-        case unshift
-        case reverse
-        case push
-        case swap
-        case cipherFunction
-        case nestedSplice
-        case splice
-        case prepend
-        case intValue(Int)
-        case stringValue(String)
-        case array([ThrottlingJSExpression?])
-        
-        var isCallable: Bool {
-            switch self {
-            case .array(_), .stringValue(_), .intValue(_): return false
-            default: return true
-            }
-        }
-        
-        func execute(on argument: ThrottlingJSExpression, and secondArgument: ThrottlingJSExpression? = nil) {
-            
-        }
-    }
-    
-    /// Extract the "c" array.
-    class func getThrottlingFunctionArray(js: String) throws -> [ThrottlingJSExpression] {
-        let rawCode = try getThrottlingFunctionCode(js: js)
-        
-        let arrayRegex = NSRegularExpression(#",c=\["#)
-        guard let match = arrayRegex.firstMatch(in: rawCode) else {
-            throw YouTubeKitError.regexMatchError
-        }
-        
-        let arrayRaw = try Extraction.findObjectFromStartpoint(html: rawCode, startPoint: rawCode.index(before: match.end))
-        let strArray = try Parser.throttlingArraySplit(jsArray: arrayRaw)
-        
-        var convertedArray = [ThrottlingJSExpression?]()
-        for el in strArray {
-            if let intValue = Int(el) {
-                convertedArray.append(.intValue(intValue))
-            }
-            
-            if el == "null" {
-                convertedArray.append(nil)
-                continue
-            }
-            
-            if el.starts(with: "\"") && el.hasSuffix("\"") { // remove quotation marks
-                convertedArray.append(.stringValue(String(el.dropFirst().dropLast())))
-                continue
-            }
-            
-            if el.starts(with: "function") {
-                let mapper = [
-                    (NSRegularExpression(#"\{for\(\w=\(\w%\w\.length\+\w\.length\)%\w\.length;\w--;\)\w\.unshift\(\w.pop\(\)\)\}"#), ThrottlingJSExpression.unshift),
-                    (NSRegularExpression(#"\{\w\.reverse\(\)\}"#), .reverse),
-                    (NSRegularExpression(#"\{\w\.push\(\w\)\}"#), .push),
-                    (NSRegularExpression(#";var\s\w=\w\[0\];\w\[0\]=\w\[\w\];\w\[\w\]=\w\}"#), .swap),
-                    (NSRegularExpression(#"case\s\d+"#), .cipherFunction),
-                    (NSRegularExpression(#"\w\.splice\(0,1,\w\.splice\(\w,1,\w\[0\]\)\[0\]\)"#), .nestedSplice),
-                    (NSRegularExpression(#";\w\.splice\(\w,1\)\}"#), .splice),
-                    (NSRegularExpression(#"\w\.splice\(-\w\)\.reverse\(\)\.forEach\(function\(\w\)\{\w\.unshift\(\w\)\}\)"#), .prepend),
-                    (NSRegularExpression(#"for\(var \w=\w\.length;\w;\)\w\.push\(\w\.splice\(--\w,1\)\[0\]\)\}"#), .reverse)
-                ]
-                
-                var found = false
-                for (pattern, fn) in mapper {
-                    if pattern.matches(el) {
-                        convertedArray.append(fn)
-                        found = true
-                    }
-                }
-                
-                if found {
-                    continue
-                }
-            }
-            
-            convertedArray.append(.stringValue(el))
-        }
-        
-        // replace null elements with array itself
-        for i in 0..<convertedArray.count {
-            if convertedArray[i] == nil {
-                convertedArray[i] = .array(convertedArray)
-            }
-        }
-        
-        return convertedArray.compactMap { $0 }
-    }
-    
-    /// The "throttling plan" is a list of tuples used for calling functions in the c array. The first element of the tuple is the index of the
-    // function to call, and any remaining elements of the tuple are arguments to pass to that function.
-    class func getThrottlingPlan(js: String) throws -> [(String, String, String?)] {
-        let rawCode = try getThrottlingFunctionCode(js: js)
-        
-        let planRegex = NSRegularExpression(#"try\{"#)
-        guard let match = planRegex.firstMatch(in: rawCode) else {
-            throw YouTubeKitError.regexMatchError
-        }
-        
-        let transformPlanRaw = try Extraction.findObjectFromStartpoint(html: rawCode, startPoint: rawCode.index(before: match.end))
-        
-        let stepRegex = NSRegularExpression(#"c\[(\d+)\]\(c\[(\d+)\](,c(\[(\d+)\]))?\)"#)
-        let matches = stepRegex.allMatches(in: transformPlanRaw, includingGroups: [0, 1, 4])
-        var transformSteps = [(String, String, String?)]()
-        
-        for (_, groupMatches) in matches {
-            if groupMatches[4]?.content != "" {
-                transformSteps.append((groupMatches[0]!.content, groupMatches[1]!.content, groupMatches[4]?.content))
-            } else {
-                transformSteps.append((groupMatches[0]!.content, groupMatches[1]!.content, nil))
-            }
-        }
-        return transformSteps
-    }
-    
     enum JSFunction {
         case reverse
         case splice
@@ -399,6 +268,22 @@ class Cipher {
         }
         
         throw YouTubeKitError.regexMatchError
+    }
+    
+    
+    // MARK: - n parameter function
+    
+    private class func getNParameterFunction(js: String) throws -> String {
+        
+        //let pattern = NSRegularExpression(#"\.get\("n"\)\)&&\(b=(?P<nfunc>[a-zA-Z0-9$]+)(?:\[(?P<idx>\d+)\])?\([a-zA-Z0-9]\)"#)
+        
+        let parts = js.replacingOccurrences(of: "\n", with: "").components(separatedBy: "var b=a.split(\"\")")
+        
+        guard parts.count > 1 else {
+            return ""
+        }
+        
+        return #"function processNSignature(a) { var b=a.split("")"# + parts[1].components(separatedBy: #"return b.join("")"#)[0] + #";return b.join(""); }"#
     }
     
 }
